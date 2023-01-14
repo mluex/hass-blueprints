@@ -1,0 +1,71 @@
+blueprint:
+  name: Detection of tampered sensors
+  description: Regularly test all sensors with the "Tamper" device class to see
+    if they have been tampered with and perform an action if this is the case.
+  domain: automation
+  input:
+    time:
+      name: Time to test on
+      description: Test is run at configured time
+      default: '10:00:00'
+      selector:
+        time: {}
+    day:
+      name: Weekday to test on
+      description: 'Test is run at configured time either everyday (0) or on a given
+        weekday (1: Monday ... 7: Sunday)'
+      default: 0
+      selector:
+        number:
+          min: 0.0
+          max: 7.0
+          mode: slider
+          step: 1.0
+    exclude:
+      name: Excluded Sensors
+      description: Sensors to exclude from detection. Only entities are
+        supported, devices must be expanded!
+      default:
+        entity_id: []
+      selector:
+        target:
+          entity:
+            device_class: tamper
+    actions:
+      name: Actions
+      description: Notifications or similar to be run. {{sensors}} is replaced with
+        the names of affacted sensors.
+      selector:
+        action: {}
+  source_url: https://github.com/mluex/hass-blueprints/blob/master/automation/notification-tampered-sensors.yaml
+variables:
+  day: !input 'day'
+  exclude: !input 'exclude'
+  sensors: >
+    {% set result = namespace(sensors=[]) %} 
+    {% for state in states.sensor
+      | rejectattr('attributes.device_class', 'undefined')
+      | selectattr('attributes.device_class', '==', 'tamper')
+      | selectattr('state', '==', true) %}
+      {% if not state.entity_id in exclude.entity_id %}
+        {% set result.sensors = result.sensors + [state.name] %}
+      {% endif %}
+    {% endfor %}
+    {% for state in states.binary_sensor
+      | rejectattr('attributes.device_class', 'undefined')
+      | selectattr('attributes.device_class', '==', 'tamper')
+      | selectattr('state', '==', 'on') %}
+      {% if not state.entity_id in exclude.entity_id %}
+        {% set result.sensors = result.sensors + [state.name] %}
+      {% endif %}
+    {% endfor %}
+    {{result.sensors|join('\n')}}
+trigger:
+- platform: time
+  at: !input 'time'
+condition:
+- '{{ sensors != '''' and (day | int == 0 or day | int == now().isoweekday()) }}'
+action:
+- choose: []
+  default: !input 'actions'
+mode: single
